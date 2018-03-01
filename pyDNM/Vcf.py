@@ -64,7 +64,7 @@ class Vcf():
         gt=None
         if self.gt.get(iid)!=None: gt=self.gt[iid]
         if gt==None:
-            sys.stderr.write('WARNING: missing genotype entry: {} {}'.format(variant,iid))
+            sys.stderr.write('WARNING: missing genotype entry: {} {}\n'.format(variant,iid))
         return gt
     def allele_depth(self,entry=None,dnm=None,par=None):
         """
@@ -140,6 +140,7 @@ class Vcf():
             Foreach trio
             """
             for kid in Fam.offspring:
+                if self.ids.get(kid)==None: continue
                 dad,mom = Fam.offspring[kid]
                 kgt,dgt,mgt = self.check_genotypes(kid,variant),self.check_genotypes(dad,variant),self.check_genotypes(mom,variant)
                 # skip if genotypes are not available
