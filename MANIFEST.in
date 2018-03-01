@@ -1,0 +1,3 @@
+include pyDNM/*
+include README.md
+include LICENSE
