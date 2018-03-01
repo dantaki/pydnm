@@ -13,7 +13,7 @@ USE AT YOUR OWN RISK
 ## Install
 
 ```
-$ pip install 
+$ pip install https://github.com/dantaki/pydnm/releases/download/v0.0.1/pyDNM-0.0.1.tar.gz 
 ```
 
 ---
