@@ -109,6 +109,7 @@ class Vcf():
             else:
                 pl = try_index(_pl,idx)
                 if pl==None: return -1
+                elif pl=='.': return -1
                 else: return float(pl)
     def parse(self,fh=None, Fam=None,verb=None,ofh=None):
         err_fh(fh)
