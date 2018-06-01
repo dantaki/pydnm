@@ -83,7 +83,7 @@ class Vcf():
             else: 
                 _par = float(_par)+_buff
                 ar = float(_dnm)/ (_par)
-                med = np.median([float(x) for x in _ad]) 
+                med = np.median([float(x) for x in _ad if x!='.']) 
                 if not np.isfinite(med): return -1, np.nan
                 else: return ar, np.log2( (float(_dnm)+float(_par)) / (med+_buff) )
     def genotype_quals(self,entry=None):
