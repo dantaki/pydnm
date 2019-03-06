@@ -4,7 +4,7 @@ import sys
 class Fam():
     def __init__(self):
         self.offspring = {} # [child ID] = (Father,Mother)
-        self.sex = {} # [child ID] = Sex
+        self.sex = {} # [child ID] = Sex as a string!
     def load_fam(self,fh=None):
         err_fh(fh)
         with open(fh) as f:

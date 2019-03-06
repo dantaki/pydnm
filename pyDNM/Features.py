@@ -31,9 +31,7 @@ class Feature():
         # INFO features
         self.info_feats=[]
         self.info_keys=['VQSLOD','ClippingRankSum','BaseQRankSum','FS','SOR','MQ','MQRankSum','QD','ReadPosRankSum']
-    #def depth(self,):
-        # calc med AD
-        # 
+
     def info_features(self,l=None):
         info={}
         for x in l.split(';'):
@@ -43,24 +41,30 @@ class Feature():
         for key in self.info_keys:
             if info.get(key)!=None: self.info_feats.append(float(info[key]))
             else: self.info_feats.append(np.nan)
+
     def parse(self,r=None,par=None,dnm=None):
         self.filt=str(r[6])
         if self.filt=='.': self.filt=np.nan
         if str(r[5])=='.': self.qual=np.nan
         else: self.qual=float(r[5])
         self.info_features(r[7])
+
     def output(self):
         o=[ self.n_alt,self.filt,self.qual,self.p_ar_max,self.p_ar_min,self.o_ar,
             self.p_dp_max,self.p_dp_min,self.o_dp,
             self.p_og_max,self.p_og_min,self.p_pg_max,self.p_pg_min,self.og,self.o_pg,
             self.p_gq_max,self.p_gq_min,self.o_gq]
+
         o+=self.info_feats
         return '\t'.join(map(str,o))
+
     def header(self):
+
         o = [   'nalt','filter','qual','parent_ar_max','parent_ar_min','offspring_ar',
                 'parent_dp_max','parent_dp_min','offspring_dp',
                 'parent_dnm_pl_max','parent_dnm_pl_min','parent_inh_pl_max','parent_inh_pl_min',
                 'offspring_dnm_pl','offspring_inh_pl',
                 'parent_gq_max','parent_gq_min','offspring_gq']
         o += self.info_keys
+        
         return '\t'.join(map(str,o))

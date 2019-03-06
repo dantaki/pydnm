@@ -3,6 +3,7 @@ from pyDNM.Backend import err_fh,tokenize,try_index
 from pyDNM.Features import Feature
 import numpy as np
 import sys
+
 def genotype_pl_index(gt=None):
     """
         In presence of the GT field the same
@@ -19,6 +20,12 @@ def genotype_pl_index(gt=None):
         return int((a2*(a2+1)/2.)+a1)
     else:
         return -1
+
+def intersect_range(x,y):
+    # x and y are lists with two elements
+    # the 0-based start and end; x = [99, 100] for example 
+    return len(list(range(max(x[0],y[0]), min(x[1],y[1]))))
+
 class Vcf():
     def __init__(self):
         self.ids={} # [iid] = column index
@@ -111,7 +118,10 @@ class Vcf():
                 if pl==None: return -1
                 elif pl=='.': return -1
                 else: return float(pl)
-    def parse(self,fh=None, Fam=None,verb=None,ofh=None):
+
+    #---------------------------------------------------------------
+    # Main Function to parse VCF and extract genotypes
+    def parse(self,fh=None, Fam=None,verb=None,ofh=None,pseud=None):
         err_fh(fh)
         vcf_fh=None
         if fh.endswith('.gz'):
@@ -137,25 +147,61 @@ class Vcf():
             if self.missing[0]==True:
                 if verb==True: sys.stderr.write('WARNING: missing genotypes {} {}\n'.format(variant,','.join(self.missing[1])))
                 continue
+            
             """
             Foreach trio
             """
             for kid in Fam.offspring:
+
+                # skip if child is female and variant is on Y chromosome
+                if Fam.sex[kid] == '2' and r[0].endswith('Y'): continue
+
                 if self.ids.get(kid)==None: continue
                 dad,mom = Fam.offspring[kid]
                 kgt,dgt,mgt = self.check_genotypes(kid,variant),self.check_genotypes(dad,variant),self.check_genotypes(mom,variant)
                 # skip if genotypes are not available
                 if kgt==None or dgt==None or mgt==None: continue
                 alleles = kgt.replace('|','/').split('/')
-                """
-                determine which of the offspring alleles are de novo and inherited
-                """
+                
+                # determine which of the offspring alleles are de novo and inherited
+                
+                # 0-base positions
+                pos0 = [int(r[1])-1,int(r[1])+len(r[3])-1]
+                chrom = r[0]
+                if not r[0].startswith('chr'): chrom = 'chr'+chrom
+                par1,par2= None,None #pseudoautosome regions
+                if chrom == 'chrX' or chrom=='chrY':
+                    par1,par2 = pseud[chrom]
+                is_diploid=True
+                # skip if male, on sex chromosome, not in PAR, and het genotype
+                if (Fam.sex[kid] == '1' and 
+                    (chrom == 'chrX' or chrom=='chrY') and 
+                    intersect_range(pos0,par1)==0 and 
+                    intersect_range(pos0,par2)==0):
+
+                        is_diploid=False # haploid genotype
+                        
+                if is_diploid==False and len(set(alleles)) > 1: continue
+
                 par,dnm = None,None # parent allele, de novo allele
                 for a in alleles:
-                    # if the offspring allele is NOT in parents genotype ==> De Novo
-                    if str(a) not in dgt and str(a) not in mgt: dnm=int(a)
-                    # if the offspring allele is in ONE of the parents genotype ==> Inherited
-                    elif str(a) in dgt or str(a) in mgt: par=int(a)
+                    # Diploid
+                        # if the offspring allele is NOT in parents genotype ==> De Novo
+                    if is_diploid==True:
+                        if str(a) not in dgt and str(a) not in mgt: dnm=int(a)
+                        # if the offspring allele is in ONE of the parents genotype ==> Inherited
+                        if str(a) in dgt or str(a) in mgt: par=int(a)
+                    # Haploid
+                    else:
+                        if chrom == 'chrX' and str(a) not in mgt: dnm=int(a)
+                        if chrom == 'chrY' and str(a) not in dgt: dnm=int(a)
+
+                # For male sex chromosome variants, get the correct parent allele
+                if is_diploid==False and dnm != None:
+                    par_alleles = mgt.replace('|','/').split('/')
+                    if chrom == 'chrY': par_alleles = dgt.replace('|','/').split('/')
+                    for a in par_alleles:
+                        if str(a) not in kgt: par=int(a)
 
                 # skip if there is not one inherited and one de novo allele
                 if par==None or dnm==None: continue
@@ -164,6 +210,11 @@ class Vcf():
                 Feat = Feature()
                 # load INFO features
                 Feat.parse(r)
+                # skip multiallelic
+                Feat.n_alt = len(str(r[4]).split(','))
+                if Feat.n_alt > 1: continue
+                
+                #-------------------------------------------------------------------------------------------
                 # Allele depth
                 if self.format.get('AD')==None: 
                     if verb==True: sys.stderr.write('WARNING: missing allele depth AD {}\n'.format(variant))
@@ -173,12 +224,16 @@ class Vcf():
                 kid_ad,kid_dp = self.allele_depth(r[self.ids[kid]],dnm,par)
                 if dad_ad==-1 or mom_ad==-1 or kid_ad==-1: continue
                 if not np.isfinite(dad_dp) or not np.isfinite(mom_dp) or not np.isfinite(kid_dp): continue
+
                 Feat.p_ar_max= max(dad_ad,mom_ad)
                 Feat.p_ar_min= min(dad_ad,mom_ad)
                 Feat.o_ar = kid_ad
                 Feat.p_dp_max = max(dad_dp,mom_dp)
                 Feat.p_dp_min = min(dad_dp,mom_dp)
                 Feat.o_dp = kid_dp
+                #-------------------------------------------------------------------------------------------
+
+                #-------------------------------------------------------------------------------------------
                 # Genotype quality scores
                 if self.format.get('GQ')==None:
                     if verb==True: sys.stderr.write('WARNING: missing genotype quality GQ {}\n'.format(variant))
@@ -188,7 +243,9 @@ class Vcf():
                 Feat.p_gq_max = max(dad_gq,mom_gq)
                 Feat.p_gq_min = min(dad_gq,mom_gq)
                 Feat.o_gq = kid_gq
-                Feat.n_alt = len(str(r[4]).split(','))
+                #-------------------------------------------------------------------------------------------
+
+                #-------------------------------------------------------------------------------------------
                 # Phred scaled genotype likelihoods
                 if self.format.get('PL')==None:
                     if verb==True: sys.stderr.write('WARNING: missing Phred-adjusted genotype likelihoods PL {}\n'.format(variant))
@@ -203,6 +260,25 @@ class Vcf():
                 Feat.p_pg_min = min(dad_pl,mom_pl)
                 Feat.og = kid_pl
                 Feat.o_pg = np.median([kid_d_pl,kid_m_pl])
+                #-------------------------------------------------------------------------------------------
+
+                #-------------------------------------------------------------------------------------------
+                # Sex Chromosome Methods for Males
+                if is_diploid==False:
+                        if chrom.endswith('X'):
+                            Feat.p_ar_max, Feat.p_ar_min = mom_ad,mom_ad
+                            Feat.p_dp_max, Feat.p_dp_min = mom_dp,mom_dp
+                            Feat.p_gq_max, Feat.p_gq_min = mom_gq,mom_gq
+                            Feat.p_og_max, Feat.p_og_min = mom_o_pl, mom_o_pl
+                            Feat.p_pg_max, Feat.p_pg_min = mom_pl, mom_pl
+                        else:
+                            Feat.p_ar_max, Feat.p_ar_min = dad_ad,dad_ad
+                            Feat.p_dp_max, Feat.p_dp_min = dad_dp,dad_dp
+                            Feat.p_gq_max, Feat.p_gq_min = dad_gq,dad_gq
+                            Feat.p_og_max, Feat.p_og_min = dad_o_pl, dad_o_pl
+                            Feat.p_pg_max, Feat.p_pg_min = dad_pl, dad_pl
+                #-------------------------------------------------------------------------------------------
+                # Output the data
                 o = Feat.output()
                 out.write('{}\t{}\t{}\t{}\t{}\t{}\n'.format('\t'.join(variant),kid,kgt,dgt,mgt,o))
         out.close()
